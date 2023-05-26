@@ -42,8 +42,9 @@ def free_adv_train(model, data_tr, criterion, optimizer, lr_scheduler, \
     delta = None
 
     # total number of updates - FILL ME
-    real_epochs = epochs // m
-    total_updates = real_epochs * (len(data_tr) / batch_size)
+    real_epochs = epochs / m
+    # total_updates = real_epochs * (len(data_tr.dataset) / batch_size)
+    total_updates = int(np.ceil(epochs * len(data_tr)/batch_size))
 
 
 
@@ -54,22 +55,24 @@ def free_adv_train(model, data_tr, criterion, optimizer, lr_scheduler, \
     iter_count = 0
     while iter_count < total_updates:
         for X, Y in loader_tr:
-            if delta is None:
+            if delta is None and iter_count == 0:
                 delta = torch.zeros_like(X).to(device)
+            elif delta is None:
+                raise ValueError("delta is None but iter_count > 0")
             X = X.to(device)
-            X.requires_grad = True
             Y = Y.to(device)
             for j in range(m):
                 # if torch.is_tensor(delta) and X.shape[0] != delta.shape[0]:
                 #     delta = delta[:X.shape[0]]
-                noised_x = X + delta[ : X.shape[0]]
+                noised_x = X + delta[:X.shape[0]]
+                noised_x.requires_grad = True
                 outputs = model(noised_x)
                 # outputs to labels?
                 loss = criterion(outputs, Y)
                 loss.backward()
 
                 # might need to take this from X + delta!
-                g_adv = X.grad
+                g_adv = noised_x.grad
 
                 optimizer.step()
 
@@ -83,7 +86,7 @@ def free_adv_train(model, data_tr, criterion, optimizer, lr_scheduler, \
                     lr_scheduler.step()
                 if iter_count == total_updates:
                     break
-                X.grad.zero_()
+                noised_x.grad.zero_()
             if iter_count == total_updates:
                 break
 
