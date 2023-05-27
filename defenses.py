@@ -238,25 +238,43 @@ class NeuralCleanse:
         - trigger: 
         """
         # randomly initialize mask and trigger in [0,1] - FILL ME
-        mask = torch.rand(self.dim[0],1, self.dim[2],self.dim[3]).to(device).requires_grad_()
+        mask_dim = [self.dim[0],1,*self.dim[2:]]
+        mask = torch.rand(mask_dim).to(device).requires_grad_()
         trigger = torch.rand(self.dim).to(device).requires_grad_()
 
+
         # run self.niters of SGD to find (potential) trigger and mask - FILL ME
-        optimizer = optim.SGD([mask,trigger], lr=self.step_size)
+        # optimizer = optim.SGD([mask,trigger], lr=self.step_size)
+        # optimizer = optim.SGD([mask, trigger], lr=0.01, momentum=0.9)
         count_niters = 0
+
         while count_niters < self.niters:
-            for x,y in data_loader:
+            for x,_ in data_loader:
                 tensor_ct = torch.tensor(c_t).expand(x.shape[0]).to(device)
-                optimizer.zero_grad()
-                x,y = x.to(device),y.to(device)
+
+                mask = torch.clamp(mask, 0, 1)
+                trigger = torch.clamp(trigger, 0, 1)
+
+                x = x.to(device)
                 masked_x = (1-mask) * x + mask * trigger
+                masked_x = torch.clamp(masked_x,0,1)
+
                 output = self.model(masked_x)
-                loss = self.loss_func(output, tensor_ct) + self.lambda_c * mask.abs().sum()
-                loss.backward()
-                optimizer.step()
+                loss = self.loss_func(output, tensor_ct) + self.lambda_c * 3 * mask.abs().sum()
+
+                mask_grad, trigger_grad = torch.autograd.grad(loss, [mask, trigger])
+
+                mask = mask - self.step_size * torch.sign(mask_grad)
+                trigger = trigger - self.step_size * torch.sign(trigger_grad)
+
+                mask = torch.clamp(mask, 0, 1)
+                trigger = torch.clamp(trigger, 0, 1)
+
                 count_niters += 1
                 if(count_niters == self.niters):
                     break
 
         # done
-        return mask, trigger
+        print(f"mask max: {mask.max()}")
+        print(f"trigger max: {trigger.max()}")
+        return mask.expand(trigger.shape), trigger
